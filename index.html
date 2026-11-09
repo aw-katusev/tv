@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Доктор Кто — сезон 12</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #161a22;
+      --text: #f2f4f8;
+      --muted: #9aa3b2;
+      --accent: #3d8bfd;
+      --accent-dim: #2563b8;
+      --focus: #ffd166;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+      font-size: clamp(20px, 2.4vw, 32px);
+    }
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+    header {
+      padding: 1.25rem clamp(1.5rem, 4vw, 3.5rem);
+      background: var(--panel);
+      border-bottom: 2px solid #252b36;
+    }
+    .header-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem 1.25rem;
+    }
+    .header-titles { flex: 1; min-width: 10rem; }
+    h1 { font-size: 1.35em; font-weight: 600; }
+    .sub { color: var(--muted); font-size: 0.72em; margin-top: 0.35rem; line-height: 1.35; }
+    .header-trans {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+    .header-trans label {
+      color: var(--muted);
+      font-size: 0.65em;
+      text-align: right;
+    }
+    #translation {
+      width: auto;
+      min-width: 9rem;
+      max-width: min(42vw, 16rem);
+      font-size: 0.85em;
+      min-height: 2.5rem;
+      padding: 0.45rem 0.65rem;
+    }
+    main {
+      flex: 1;
+      width: 100%;
+      max-width: none;
+      padding: 1.25rem clamp(1.5rem, 4vw, 3.5rem) 2rem;
+      box-sizing: border-box;
+    }
+    #status {
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      min-height: 1.5em;
+    }
+    #status.error { color: #ff6b6b; }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .field label,
+    .field .field-label {
+      color: var(--muted);
+      font-size: 0.8em;
+    }
+    select {
+      font: inherit;
+      padding: 0.65rem 0.85rem;
+      border-radius: 10px;
+      border: 2px solid #3a4250;
+      background: #0f1218;
+      color: var(--text);
+      min-height: 3rem;
+    }
+    select:focus {
+      outline: 3px solid var(--focus);
+      border-color: var(--accent);
+    }
+    .episode-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      max-height: min(58vh, 560px);
+      overflow-y: auto;
+      padding-right: 0.15rem;
+    }
+    .episode-list button {
+      font: inherit;
+      width: 100%;
+      text-align: left;
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      border: 2px solid #3a4250;
+      background: #0f1218;
+      color: var(--text);
+      min-height: 3rem;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.45rem;
+    }
+    .ep-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.35rem 0.75rem;
+    }
+    .ep-title { flex: 1; min-width: 8rem; }
+    .ep-progress-label {
+      font-size: 0.65em;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .ep-progress-label:empty { display: none; }
+    .ep-progress-track {
+      display: block;
+      height: 4px;
+      border-radius: 2px;
+      background: #2a3140;
+      overflow: hidden;
+    }
+    .ep-progress-track[hidden] { display: none; }
+    .ep-progress-fill {
+      display: block;
+      height: 100%;
+      width: 0;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+    .ep-progress-fill.done { background: #4ade80; }
+    .episode-list button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .episode-list button.selected {
+      border-color: var(--accent);
+      background: #1a2433;
+    }
+    .episode-list button:focus {
+      outline: 3px solid var(--focus);
+      border-color: var(--accent);
+    }
+
+    #player-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      background: #000;
+      flex-direction: column;
+    }
+    #player-screen.active { display: flex; }
+    .player-stage {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      display: flex;
+      background: #000;
+    }
+    #player-screen video {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      background: #000;
+      object-fit: contain;
+    }
+    #player-screen .bar {
+      flex-shrink: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 0.5rem;
+      align-items: center;
+      padding: 0.45rem 0.75rem;
+      background: rgba(12, 14, 18, 0.95);
+      border-top: 1px solid #333;
+    }
+    #player-screen.video-expanded .bar {
+      display: none;
+    }
+    #player-screen.active:not(.video-expanded) .player-stage:focus {
+      outline: 3px solid rgba(255, 209, 102, 0.35);
+      outline-offset: -3px;
+    }
+    .playback-hint {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      padding: 0.85rem 1.75rem;
+      background: rgba(0, 0, 0, 0.78);
+      border-radius: 12px;
+      font-size: 1.1em;
+      font-weight: 600;
+      pointer-events: none;
+      z-index: 2;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .playback-hint.show {
+      opacity: 1;
+    }
+    #player-screen .bar button {
+      font: inherit;
+      font-size: 0.72em;
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #222;
+      color: var(--text);
+      cursor: pointer;
+      min-width: 0;
+      min-height: 0;
+    }
+    #player-screen .bar button:focus {
+      outline: none;
+      border-color: var(--focus);
+      box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.4);
+    }
+    #player-screen .bar button.primary { background: var(--accent-dim); border-color: var(--accent); }
+    #player-screen .bar .title {
+      flex: 1;
+      min-width: 6rem;
+      font-size: 0.65em;
+      color: var(--muted);
+      line-height: 1.25;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <div class="header-titles">
+        <h1>Доктор Кто — 12 сезон</h1>
+        <p class="sub">↑↓ — серия, OK — старт. В плеере: OK — пауза, ←→ — серия, «Назад» — к списку.</p>
+      </div>
+      <div class="header-trans">
+        <label for="translation">Озвучка</label>
+        <select id="translation" aria-label="Озвучка"></select>
+      </div>
+    </div>
+  </header>
+  <main>
+    <p id="status">Загрузка списка серий…</p>
+    <div class="controls">
+      <div class="field">
+        <span class="field-label" id="episode-label">Серия</span>
+        <ul id="episode-list" class="episode-list" role="listbox" aria-labelledby="episode-label"></ul>
+      </div>
+    </div>
+  </main>
+
+  <div id="player-screen" aria-hidden="true">
+    <div class="player-stage" id="player-stage" tabindex="0" aria-label="Видео, OK — пауза, Назад — к списку">
+      <video id="video" controls playsinline tabindex="-1"></video>
+      <span id="playback-hint" class="playback-hint" hidden aria-live="polite"></span>
+    </div>
+    <div class="bar">
+      <button type="button" id="btn-back" class="primary">← К списку</button>
+      <button type="button" id="btn-playpause">⏸ Пауза</button>
+      <button type="button" id="btn-prev">◀ Пред.</button>
+      <button type="button" id="btn-next">След. ▶</button>
+      <span class="title" id="now-playing"></span>
+    </div>
+  </div>
+
+  <script src="season12-playback.js"></script>
+  <script>
+    const EPISODE_NAMES = {
+      s12e01: 'Spyfall, Part 1',
+      s12e02: 'Spyfall, Part 2',
+      s12e03: 'Orphan 55',
+      s12e04: "Nikola Tesla's Night of Terror",
+      s12e05: 'Fugitive of the Judoon',
+      s12e06: 'Praxeus',
+      s12e07: 'Can You Hear Me?',
+      s12e08: 'The Haunting of Villa Diodati',
+      s12e09: 'Ascension of the Cybermen',
+      s12e10: 'The Timeless Children',
+    };
+
+    const STORAGE_KEY = 'dw_s12_translation_jaskier';
+    const EPISODE_KEY = 'dw_s12_episode';
+    const POSITION_KEY = 'dw_s12_positions';
+    const POSITION_SAVE_INTERVAL_MS = 20_000;
+
+    let catalog = { episodes: new Map(), translations: [] };
+    let episodeOrder = [];
+    let selectedEpisodeId = null;
+    let currentEpisodeId = null;
+    let lastPositionSaveMs = 0;
+    let playerHistoryPushed = false;
+    let hls = null;
+
+    const statusEl = document.getElementById('status');
+    const episodeListEl = document.getElementById('episode-list');
+    const translationEl = document.getElementById('translation');
+    const playerScreen = document.getElementById('player-screen');
+    const video = document.getElementById('video');
+    const playerStage = document.getElementById('player-stage');
+    const nowPlaying = document.getElementById('now-playing');
+
+    function setStatus(msg, isError) {
+      statusEl.textContent = msg;
+      statusEl.classList.toggle('error', !!isError);
+    }
+
+    function translationLabel(raw) {
+      return raw.split('(')[0].trim();
+    }
+
+    function buildCatalogFromApi(data) {
+      const episodes = new Map();
+      for (const ep of data.episodes || []) {
+        episodes.set(ep.id, {
+          id: ep.id,
+          num: ep.num,
+          title: ep.title || EPISODE_NAMES[ep.id] || ep.id,
+          translations: ep.translations || [],
+        });
+      }
+      episodeOrder = (data.episodes || []).map((e) => e.id);
+      return { episodes, translations: data.translations || [] };
+    }
+
+    function getPositions() {
+      try { return JSON.parse(localStorage.getItem(POSITION_KEY) || '{}'); } catch { return {}; }
+    }
+
+    function normalizePosition(raw) {
+      if (raw == null) return null;
+      if (typeof raw === 'number') return { t: raw, d: 0 };
+      if (typeof raw === 'object' && typeof raw.t === 'number') {
+        return { t: raw.t, d: typeof raw.d === 'number' ? raw.d : 0 };
+      }
+      return null;
+    }
+
+    function getEpisodePosition(episodeId) {
+      return normalizePosition(getPositions()[episodeId]);
+    }
+
+    function formatWatchTime(seconds) {
+      const s = Math.max(0, Math.floor(seconds));
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      const mm = String(m).padStart(2, '0');
+      const ss = String(sec).padStart(2, '0');
+      if (h > 0) return `${h}:${mm}:${ss}`;
+      return `${m}:${ss}`;
+    }
+
+    function progressLabel(p) {
+      if (!p || p.t <= 5) return '';
+      if (p.d > 0 && p.t >= p.d - 30) return 'Досмотрено';
+      const at = formatWatchTime(p.t);
+      if (p.d > 0) return `до ${at} из ${formatWatchTime(p.d)}`;
+      return `с ${at}`;
+    }
+
+    function savePosition(episodeId, time, duration) {
+      const pos = getPositions();
+      const prev = normalizePosition(pos[episodeId]);
+      const t = Math.max(0, Math.floor(time * 10) / 10);
+      let d = 0;
+      if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) {
+        d = duration;
+      } else if (prev?.d > 0) {
+        d = prev.d;
+      }
+      pos[episodeId] = { t, d };
+      localStorage.setItem(POSITION_KEY, JSON.stringify(pos));
+    }
+
+    function syncEpisodeProgress(btn, episodeId) {
+      const p = getEpisodePosition(episodeId);
+      const label = btn.querySelector('.ep-progress-label');
+      const fill = btn.querySelector('.ep-progress-fill');
+      const track = btn.querySelector('.ep-progress-track');
+      if (!label || !fill || !track) return;
+      const text = progressLabel(p);
+      label.textContent = text;
+      fill.classList.remove('done');
+      if (p && p.d > 0 && p.t > 5) {
+        const done = p.t >= p.d - 30;
+        const pct = done ? 100 : Math.min(100, (p.t / p.d) * 100);
+        fill.style.width = `${pct}%`;
+        track.hidden = false;
+        if (done) fill.classList.add('done');
+      } else {
+        fill.style.width = '0%';
+        track.hidden = true;
+      }
+    }
+
+    function refreshEpisodeProgressMarks() {
+      episodeListEl.querySelectorAll('button[data-episode-id]').forEach((btn) => {
+        syncEpisodeProgress(btn, btn.dataset.episodeId);
+      });
+    }
+
+    function flushPlaybackPosition() {
+      if (!currentEpisodeId || video.currentTime <= 0) return;
+      const d = Number.isFinite(video.duration) ? video.duration : 0;
+      savePosition(currentEpisodeId, video.currentTime, d);
+      lastPositionSaveMs = Date.now();
+      const listBtn = episodeListEl.querySelector(`button[data-episode-id="${currentEpisodeId}"]`);
+      if (listBtn) syncEpisodeProgress(listBtn, currentEpisodeId);
+    }
+
+    function maybeSavePlaybackPosition() {
+      if (!currentEpisodeId || video.paused || video.currentTime <= 0) return;
+      const now = Date.now();
+      if (now - lastPositionSaveMs < POSITION_SAVE_INTERVAL_MS) return;
+      flushPlaybackPosition();
+    }
+
+    function episodeHasTranslation(episodeId) {
+      const ep = catalog.episodes.get(episodeId);
+      if (!ep) return false;
+      return ep.translations.includes(translationEl.value);
+    }
+
+    function firstPlayableEpisode() {
+      return episodeOrder.find((id) => episodeHasTranslation(id)) || episodeOrder[0] || '';
+    }
+
+    function episodeButtons() {
+      return [...episodeListEl.querySelectorAll('button[data-episode-id]')];
+    }
+
+    function playableEpisodeButtons() {
+      return episodeButtons().filter((b) => !b.disabled);
+    }
+
+    function updateEpisodeListSelection() {
+      episodeListEl.querySelectorAll('button[data-episode-id]').forEach((btn) => {
+        const isSel = btn.dataset.episodeId === selectedEpisodeId;
+        btn.classList.toggle('selected', isSel);
+        btn.setAttribute('aria-selected', isSel ? 'true' : 'false');
+        btn.tabIndex = isSel ? 0 : -1;
+      });
+    }
+
+    function focusEpisodeButton(btn, { select = true } = {}) {
+      if (!btn || btn.disabled) return;
+      if (select) setSelectedEpisode(btn.dataset.episodeId);
+      else updateEpisodeListSelection();
+      btn.tabIndex = 0;
+      episodeButtons().forEach((b) => {
+        if (b !== btn) b.tabIndex = -1;
+      });
+      btn.focus({ preventScroll: false });
+      btn.scrollIntoView({ block: 'nearest' });
+    }
+
+    function moveEpisodeFocus(delta) {
+      const playable = playableEpisodeButtons();
+      if (playable.length === 0) return;
+      const active = document.activeElement;
+      let idx = playable.indexOf(active);
+      if (idx < 0) {
+        idx = playable.findIndex((b) => b.dataset.episodeId === selectedEpisodeId);
+      }
+      const next = playable[idx + delta];
+      if (next) focusEpisodeButton(next);
+    }
+
+    function isVerticalNavKey(key) {
+      return key === 'ArrowDown' || key === 'ArrowUp' || key === 'Down' || key === 'Up';
+    }
+
+    function setSelectedEpisode(id) {
+      if (!episodeOrder.includes(id)) return;
+      selectedEpisodeId = id;
+      localStorage.setItem(EPISODE_KEY, id);
+      updateEpisodeListSelection();
+    }
+
+    function focusSelectedEpisode() {
+      const btn = episodeListEl.querySelector(`button[data-episode-id="${selectedEpisodeId}"]`);
+      if (btn && !btn.disabled) focusEpisodeButton(btn);
+      else {
+        const first = episodeListEl.querySelector('button:not(:disabled)');
+        if (first) focusEpisodeButton(first);
+      }
+    }
+
+    function renderEpisodeList() {
+      const saved = localStorage.getItem(EPISODE_KEY);
+      episodeListEl.innerHTML = '';
+      for (const id of episodeOrder) {
+        const ep = catalog.episodes.get(id);
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.episodeId = id;
+        btn.setAttribute('role', 'option');
+        const main = document.createElement('span');
+        main.className = 'ep-main';
+        const title = document.createElement('span');
+        title.className = 'ep-title';
+        title.textContent = `${ep.num}. ${ep.title}`;
+        const progLabel = document.createElement('span');
+        progLabel.className = 'ep-progress-label';
+        main.appendChild(title);
+        main.appendChild(progLabel);
+        const track = document.createElement('span');
+        track.className = 'ep-progress-track';
+        track.hidden = true;
+        const fill = document.createElement('span');
+        fill.className = 'ep-progress-fill';
+        track.appendChild(fill);
+        btn.appendChild(main);
+        btn.appendChild(track);
+        syncEpisodeProgress(btn, id);
+        btn.disabled = !episodeHasTranslation(id);
+        btn.addEventListener('click', () => {
+          if (!btn.disabled) playEpisode(id);
+        });
+        li.appendChild(btn);
+        episodeListEl.appendChild(li);
+      }
+      let pick = saved;
+      if (!pick || !episodeOrder.includes(pick) || !episodeHasTranslation(pick)) {
+        pick = firstPlayableEpisode();
+      }
+      setSelectedEpisode(pick);
+      setStatus(`Серий: ${episodeOrder.length}. Озвучка: ${translationLabel(translationEl.value)}.`);
+    }
+
+    function renderTranslations(translations) {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      translationEl.innerHTML = '';
+      for (const t of translations) {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = translationLabel(t);
+        translationEl.appendChild(opt);
+      }
+      if (saved && translations.includes(saved)) translationEl.value = saved;
+      else {
+        const preferred = translations.find((t) => /Jaskier/i.test(t));
+        if (preferred) translationEl.value = preferred;
+      }
+      renderEpisodeList();
+    }
+
+    function onTranslationChange() {
+      localStorage.setItem(STORAGE_KEY, translationEl.value);
+      renderEpisodeList();
+    }
+
+    function destroyHls() {
+      if (hls) { hls.destroy(); hls = null; }
+    }
+
+    function attachSource(url) {
+      destroyHls();
+      video.removeAttribute('src');
+      video.load();
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+        return;
+      }
+      if (window.Hls && Hls.isSupported()) {
+        hls = new Hls({ enableWorker: true });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) setStatus('Ошибка HLS. Откройте серию снова.', true);
+        });
+        return;
+      }
+      setStatus('Браузер не поддерживает HLS. Попробуйте другой браузер на ТВ.', true);
+    }
+
+    function updatePlayerVideoControls() {
+      video.controls = !playerScreen.classList.contains('active');
+    }
+
+    function setPlayerBarFocusTrap(on) {
+      playerScreen.querySelectorAll('.bar button').forEach((btn) => {
+        btn.tabIndex = on ? -1 : 0;
+      });
+    }
+
+    function showPlayer(show) {
+      playerScreen.classList.toggle('active', show);
+      playerScreen.setAttribute('aria-hidden', show ? 'false' : 'true');
+      document.body.style.overflow = show ? 'hidden' : '';
+      updatePlayerVideoControls();
+      setPlayerBarFocusTrap(show);
+      if (show) {
+        pushPlayerHistory();
+        requestAnimationFrame(() => playerStage.focus());
+      }
+    }
+
+    function pushPlayerHistory() {
+      if (playerHistoryPushed) return;
+      history.pushState({ dwPlayer: 1 }, '');
+      playerHistoryPushed = true;
+    }
+
+    function isRemoteBackKey(e) {
+      if (
+        e.key === 'Escape'
+        || e.key === 'Backspace'
+        || e.key === 'BrowserBack'
+        || e.key === 'Back'
+        || e.key === 'GoBack'
+      ) {
+        return true;
+      }
+      const code = e.keyCode || e.which;
+      return code === 4 || code === 461 || code === 10009 || code === 27;
+    }
+
+    function isOkKey(e) {
+      return e.key === 'Enter' || e.key === 'NumpadEnter' || e.keyCode === 23 || e.keyCode === 66;
+    }
+
+    function isMediaPlayPauseKey(e) {
+      if (
+        e.key === 'MediaPlayPause'
+        || e.key === 'Pause'
+        || e.key === 'Play'
+        || e.key === 'MediaPause'
+        || e.key === 'MediaPlay'
+      ) {
+        return true;
+      }
+      const code = e.keyCode || e.which;
+      return code === 85 || code === 126 || code === 127;
+    }
+
+    function handlePlayerBack(fromPopState = false) {
+      if (!playerScreen.classList.contains('active')) return;
+      collapseVideoInPlayer();
+      flushPlaybackPosition();
+      video.pause();
+      destroyHls();
+      showPlayer(false);
+      playerScreen.classList.remove('video-expanded');
+      refreshEpisodeProgressMarks();
+      focusSelectedEpisode();
+      currentEpisodeId = null;
+      if (playerHistoryPushed && !fromPopState) {
+        playerHistoryPushed = false;
+        history.back();
+      } else {
+        playerHistoryPushed = false;
+      }
+    }
+
+    const btnPlayPause = document.getElementById('btn-playpause');
+    const playbackHint = document.getElementById('playback-hint');
+    let playbackHintTimer = null;
+    let lastPlayPauseToggleMs = 0;
+
+    function updatePlayPauseButton() {
+      if (!btnPlayPause) return;
+      btnPlayPause.textContent = video.paused ? '▶ Пуск' : '⏸ Пауза';
+    }
+
+    function flashPlaybackHint() {
+      if (!playbackHint) return;
+      playbackHint.textContent = video.paused ? '⏸ Пауза' : '▶ Пуск';
+      playbackHint.hidden = false;
+      playbackHint.classList.add('show');
+      clearTimeout(playbackHintTimer);
+      playbackHintTimer = setTimeout(() => {
+        playbackHint.classList.remove('show');
+        playbackHint.hidden = true;
+      }, 1400);
+    }
+
+    function togglePlayPause() {
+      const now = Date.now();
+      if (now - lastPlayPauseToggleMs < 350) return;
+      lastPlayPauseToggleMs = now;
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+      updatePlayPauseButton();
+      flashPlaybackHint();
+    }
+
+    function isVideoExpanded() {
+      const fs = document.fullscreenElement || document.webkitFullscreenElement;
+      return fs === video || video.webkitDisplayingFullscreen === true;
+    }
+
+    function syncVideoExpandedUi() {
+      const expanded = isVideoExpanded();
+      playerScreen.classList.toggle('video-expanded', expanded);
+      updatePlayerVideoControls();
+    }
+
+    function expandVideoInPlayer() {
+      if (isVideoExpanded()) return;
+      if (video.requestFullscreen) {
+        video.requestFullscreen().then(syncVideoExpandedUi).catch(syncVideoExpandedUi);
+        return;
+      }
+      if (video.webkitEnterFullscreen) {
+        try {
+          video.webkitEnterFullscreen();
+        } catch (_) { /* overlay is enough on Android TV */ }
+      }
+      syncVideoExpandedUi();
+    }
+
+    function collapseVideoInPlayer() {
+      if (!isVideoExpanded()) return;
+      const doc = document;
+      const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+      if (doc.fullscreenElement === video && exit) {
+        Promise.resolve(exit.call(doc)).catch(() => {});
+      }
+      if (video.webkitDisplayingFullscreen && video.webkitExitFullscreen) {
+        try { video.webkitExitFullscreen(); } catch (_) { /* ignore */ }
+      }
+      syncVideoExpandedUi();
+    }
+
+    async function playEpisode(episodeId) {
+      const ep = catalog.episodes.get(episodeId);
+      if (!ep) return;
+      const translation = translationEl.value;
+      if (!episodeHasTranslation(episodeId)) {
+        setStatus('Для этой серии нет выбранной озвучки.', true);
+        return;
+      }
+
+      if (currentEpisodeId && currentEpisodeId !== episodeId) {
+        flushPlaybackPosition();
+      }
+      lastPositionSaveMs = 0;
+
+      setSelectedEpisode(episodeId);
+      showPlayer(true);
+
+      setStatus('Получаем ссылку на поток…');
+      let stream;
+      try {
+        const pb = window.Season12Playback;
+        const [playlist, embedUrl] = await Promise.all([pb.loadPlaylist(), pb.loadEmbedUrl()]);
+        const referer = pb.cinemarReferer(embedUrl);
+        const track = pb.findEpisodeTrack(playlist, episodeId, translation);
+        const loaded = await pb.loadCinemarStream(track.data, referer);
+        stream = {
+          file: loaded.file,
+          translation: track.translation || track.title || translation,
+        };
+      } catch (err) {
+        setStatus(err.message || 'Не удалось получить поток', true);
+        showPlayer(false);
+        if (playerHistoryPushed) {
+          playerHistoryPushed = false;
+          history.back();
+        }
+        return;
+      }
+
+      currentEpisodeId = episodeId;
+      nowPlaying.textContent = `Серия ${ep.num}: ${ep.title} — ${translationLabel(stream.translation || translation)}`;
+      attachSource(stream.file);
+      setStatus('');
+      const saved = getEpisodePosition(episodeId);
+      const onMeta = () => {
+        const dur = video.duration;
+        if (saved?.t > 5 && Number.isFinite(dur) && saved.t < dur - 30) {
+          video.currentTime = saved.t;
+        }
+        if (Number.isFinite(dur) && dur > 0) {
+          const t = video.currentTime > 0 ? video.currentTime : (saved?.t || 0);
+          savePosition(episodeId, t, dur);
+          refreshEpisodeProgressMarks();
+        }
+        video.removeEventListener('loadedmetadata', onMeta);
+      };
+      video.addEventListener('loadedmetadata', onMeta);
+      const onPlaying = () => {
+        expandVideoInPlayer();
+        video.removeEventListener('playing', onPlaying);
+      };
+      video.addEventListener('playing', onPlaying);
+      video.play().catch(() => {});
+      updatePlayPauseButton();
+      playerStage.focus();
+    }
+
+    function stopAndBack() {
+      handlePlayerBack(false);
+    }
+
+    function stepEpisode(delta) {
+      const idx = episodeOrder.indexOf(currentEpisodeId);
+      if (idx < 0) return;
+      let i = idx + delta;
+      while (i >= 0 && i < episodeOrder.length) {
+        const id = episodeOrder[i];
+        if (episodeHasTranslation(id)) {
+          playEpisode(id);
+          return;
+        }
+        i += delta;
+      }
+    }
+
+    episodeListEl.addEventListener('keydown', (e) => {
+      if (playerScreen.classList.contains('active')) return;
+      if (e.key === 'ArrowDown' || e.key === 'Down') {
+        e.preventDefault();
+        moveEpisodeFocus(1);
+      } else if (e.key === 'ArrowUp' || e.key === 'Up') {
+        e.preventDefault();
+        const playable = playableEpisodeButtons();
+        const idx = playable.indexOf(document.activeElement);
+        if (idx === 0) translationEl.focus();
+        else moveEpisodeFocus(-1);
+      } else if (
+        episodeListEl.contains(document.activeElement)
+        && (isOkKey(e) || e.key === ' ')
+      ) {
+        const id = document.activeElement.dataset?.episodeId;
+        if (id && !document.activeElement.disabled) {
+          e.preventDefault();
+          playEpisode(id);
+        }
+      }
+    });
+
+    btnPlayPause.addEventListener('click', togglePlayPause);
+    document.getElementById('btn-back').addEventListener('click', stopAndBack);
+
+    function onPlayerSurfaceActivate(e) {
+      if (!playerScreen.classList.contains('active')) return;
+      if (e && e.preventDefault) e.preventDefault();
+      togglePlayPause();
+    }
+
+    playerStage.addEventListener('click', (e) => {
+      if (e.button !== 0) return;
+      onPlayerSurfaceActivate(e);
+    });
+    document.getElementById('btn-prev').addEventListener('click', () => stepEpisode(-1));
+    document.getElementById('btn-next').addEventListener('click', () => stepEpisode(1));
+    translationEl.addEventListener('change', onTranslationChange);
+
+    document.addEventListener('fullscreenchange', syncVideoExpandedUi);
+    document.addEventListener('webkitfullscreenchange', syncVideoExpandedUi);
+    video.addEventListener('webkitbeginfullscreen', syncVideoExpandedUi);
+    video.addEventListener('webkitendfullscreen', () => {
+      syncVideoExpandedUi();
+      if (playerScreen.classList.contains('active') && !isVideoExpanded()) {
+        playerStage.focus();
+      }
+    });
+
+    video.addEventListener('play', updatePlayPauseButton);
+    video.addEventListener('pause', () => {
+      updatePlayPauseButton();
+      flushPlaybackPosition();
+    });
+    video.addEventListener('timeupdate', maybeSavePlaybackPosition);
+    window.addEventListener('pagehide', flushPlaybackPosition);
+    window.addEventListener('popstate', () => {
+      if (playerScreen.classList.contains('active')) {
+        handlePlayerBack(true);
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (!playerScreen.classList.contains('active')) return;
+
+      if (isRemoteBackKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        stopAndBack();
+        return;
+      }
+
+      if (isOkKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePlayPause();
+        playerStage.focus();
+        return;
+      }
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        stepEpisode(-1);
+        return;
+      }
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        stepEpisode(1);
+        return;
+      }
+
+      if (isMediaPlayPauseKey(e)) {
+        e.preventDefault();
+        togglePlayPause();
+      }
+    }, true);
+
+    async function init() {
+      try {
+        const res = await fetch('season-12-catalog.json', { cache: 'no-store' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(`season-12-catalog.json HTTP ${res.status}`);
+        catalog = buildCatalogFromApi(data);
+        if (episodeOrder.length === 0) throw new Error('Нет серий 1–10 в каталоге');
+        renderTranslations(catalog.translations);
+        focusSelectedEpisode();
+      } catch (err) {
+        setStatus(
+          'Не удалось загрузить каталог (season-12-catalog.json). На машине сборки: docker/embed-refresh, затем git push dist/.',
+          true,
+        );
+        console.error(err);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
