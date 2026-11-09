@@ -780,7 +780,7 @@
         const [playlist, embedUrl] = await Promise.all([pb.loadPlaylist(), pb.loadEmbedUrl()]);
         const referer = pb.cinemarReferer(embedUrl);
         const track = pb.findEpisodeTrack(playlist, episodeId, translation);
-        const loaded = await pb.loadCinemarStream(track.data, referer);
+        const loaded = await pb.loadCinemarStream(track, referer);
         stream = {
           file: loaded.file,
           translation: track.translation || track.title || translation,

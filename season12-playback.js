@@ -13,14 +13,20 @@
     const ep = (season.folder || []).find((e) => e.id === episodeId);
     if (!ep) throw new Error(`Episode ${episodeId} not found`);
 
-    const hint = String(translationHint || '').trim().toLowerCase();
+    const hintKey = labelKey(translationHint);
     let track = null;
 
     for (const tr of ep.folder || []) {
-      if (!tr.data) continue;
+      if (!tr.data && !tr.streamUrl) continue;
       const full = tr.translation || tr.title || '';
       const label = labelKey(full);
-      if (!hint || full === translationHint || label === hint || label.startsWith(hint)) {
+      if (
+        !hintKey
+        || full === translationHint
+        || label === hintKey
+        || label.startsWith(hintKey)
+        || hintKey.startsWith(label)
+      ) {
         track = tr;
         break;
       }
@@ -36,7 +42,19 @@
     return `${line.split('/+')[0]}/`;
   }
 
-  async function loadCinemarStream(trackData, referer) {
+  async function loadCinemarStream(track, referer) {
+    if (track && track.streamUrl) {
+      return {
+        file: track.streamUrl,
+        duration: track.streamDuration,
+        subtitle: '',
+        translation: track.translation || track.title || '',
+      };
+    }
+    const trackData = track?.data ?? track;
+    if (!trackData) {
+      throw new Error('Данные дорожки отсутствуют. Запустите обновление embed в Docker.');
+    }
     const res = await fetch('https://cinemar.cc/api/playlist/load', {
       method: 'POST',
       headers: {
@@ -48,7 +66,11 @@
     });
     const body = await res.json();
     if (!res.ok || body.file == null) {
-      throw new Error(body.error || `Cinemar playlist/load HTTP ${res.status}`);
+      throw new Error(
+        body.error
+          || `Cinemar playlist/load HTTP ${res.status}. `
+            + 'С браузера GitHub Pages API недоступен — нужен dist с streamUrl из Docker.',
+      );
     }
     return {
       file: body.file,
