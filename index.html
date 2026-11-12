@@ -233,22 +233,19 @@
     }
     #player-screen .bar button {
       font: inherit;
-      font-size: 0.72em;
-      padding: 0.35rem 0.65rem;
-      border-radius: 6px;
-      border: 1px solid #444;
-      background: #222;
+      font-size: 0.85em;
+      padding: 0.65rem 1rem;
+      border-radius: 10px;
+      border: 2px solid #3a4250;
+      background: #0f1218;
       color: var(--text);
       cursor: pointer;
-      min-width: 0;
-      min-height: 0;
+      min-height: 3rem;
     }
     #player-screen .bar button:focus {
-      outline: none;
-      border-color: var(--focus);
-      box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.4);
+      outline: 3px solid var(--focus);
+      border-color: var(--accent);
     }
-    #player-screen .bar button.primary { background: var(--accent-dim); border-color: var(--accent); }
     #player-screen .bar .title {
       flex: 1;
       min-width: 6rem;
@@ -263,7 +260,7 @@
     <div class="header-row">
       <div class="header-titles">
         <h1>Доктор Кто — 12 сезон</h1>
-        <p class="sub">↑↓ — серия, OK — старт. В плеере: OK — пауза, ←→ — серия, «Назад» — к списку.</p>
+        <p class="sub">↑↓ — серия, OK — старт. В плеере: OK на видео — пауза и панель, «Назад» — к списку.</p>
       </div>
       <div class="header-trans">
         <label for="translation">Озвучка</label>
@@ -287,7 +284,7 @@
       <span id="playback-hint" class="playback-hint" hidden aria-live="polite"></span>
     </div>
     <div class="bar">
-      <button type="button" id="btn-back" class="primary">← К списку</button>
+      <button type="button" id="btn-back">← К списку</button>
       <button type="button" id="btn-playpause">⏸ Пауза</button>
       <button type="button" id="btn-prev">◀ Пред.</button>
       <button type="button" id="btn-next">След. ▶</button>
@@ -295,6 +292,8 @@
     </div>
   </div>
 
+  <script src="player-report-config.js"></script>
+  <script src="player-error-report.js"></script>
   <script src="season12-playback.js"></script>
   <script>
     const EPISODE_NAMES = {
@@ -322,6 +321,12 @@
     let lastPositionSaveMs = 0;
     let playerHistoryPushed = false;
     let hls = null;
+    let currentStreamUrl = null;
+    let currentPlaybackTranslation = null;
+    let streamRecoverAttempts = 0;
+    let streamRefreshTimer = null;
+    const MAX_STREAM_RECOVER = 5;
+    const STREAM_REFRESH_MS = 7 * 60 * 1000;
 
     const statusEl = document.getElementById('status');
     const episodeListEl = document.getElementById('episode-list');
@@ -583,27 +588,225 @@
       renderEpisodeList();
     }
 
-    function destroyHls() {
-      if (hls) { hls.destroy(); hls = null; }
+    function stopStreamRefreshTimer() {
+      if (streamRefreshTimer) {
+        clearInterval(streamRefreshTimer);
+        streamRefreshTimer = null;
+      }
     }
 
-    function attachSource(url) {
-      destroyHls();
+    function destroyHls() {
+      stopStreamRefreshTimer();
+      if (hls) {
+        try { hls.destroy(); } catch (_) { /* ignore */ }
+        hls = null;
+      }
+    }
+
+    async function fetchFreshStreamUrl(episodeId, translation) {
+      const res = await fetch('cinemar-playlist.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`playlist HTTP ${res.status}`);
+      const playlist = await res.json();
+      const track = window.Season12Playback.findEpisodeTrack(playlist, episodeId, translation);
+      return track.streamUrl || null;
+    }
+
+    function syncPlayerErrorContext() {
+      if (typeof window.setTvPlayerErrorContext !== 'function') return;
+      window.setTvPlayerErrorContext({
+        episodeId: currentEpisodeId,
+        translation: currentPlaybackTranslation || translationEl.value,
+        position: video.currentTime,
+        streamUrl: currentStreamUrl,
+      });
+    }
+
+    function showPlayerPlaybackError(msg) {
+      syncPlayerErrorContext();
+      if (typeof window.reportPlayerError === 'function') {
+        window.reportPlayerError('playback-stopped', msg);
+      }
+      pauseAndShowBar();
+      if (playbackHint) {
+        playbackHint.textContent = msg;
+        playbackHint.hidden = false;
+        playbackHint.classList.add('show');
+        clearTimeout(playbackHintTimer);
+        playbackHintTimer = setTimeout(() => {
+          playbackHint.classList.remove('show');
+          playbackHint.hidden = true;
+        }, 6000);
+      }
+    }
+
+    function seekVideoWhenReady(at) {
+      if (!Number.isFinite(at) || at <= 0) return;
+      const apply = () => {
+        const dur = video.duration;
+        if (Number.isFinite(dur) && dur > 0 && at < dur - 1) {
+          try { video.currentTime = at; } catch (_) { /* ignore */ }
+        }
+      };
+      if (video.readyState >= 1) apply();
+      else video.addEventListener('loadedmetadata', apply, { once: true });
+    }
+
+    function bindVideoElementRecovery() {
+      video.onerror = () => {
+        if (!currentEpisodeId || !currentStreamUrl) return;
+        syncPlayerErrorContext();
+        const mediaErr = video.error;
+        const code = mediaErr ? `code=${mediaErr.code}` : 'unknown';
+        if (typeof window.reportPlayerError === 'function') {
+          window.reportPlayerError('video-element', code);
+        }
+        recoverPlaybackStream('video-error');
+      };
+      video.addEventListener('stalled', () => {
+        if (!video.paused && video.readyState < 3) {
+          video.play().catch(() => {});
+        }
+      });
+    }
+
+    let videoRecoveryBound = false;
+    function ensureVideoRecoveryBound() {
+      if (videoRecoveryBound) return;
+      videoRecoveryBound = true;
+      bindVideoElementRecovery();
+    }
+
+    async function recoverPlaybackStream(_reason) {
+      if (!currentEpisodeId) return;
+      if (streamRecoverAttempts >= MAX_STREAM_RECOVER) {
+        showPlayerPlaybackError('Поток прерван. Запустите серию снова или дождитесь обновления ссылок.');
+        return;
+      }
+      streamRecoverAttempts += 1;
+      syncPlayerErrorContext();
+      if (typeof window.reportPlayerError === 'function') {
+        window.reportPlayerError(
+          'recover-attempt',
+          `${_reason} (попытка ${streamRecoverAttempts}/${MAX_STREAM_RECOVER})`,
+        );
+      }
+      const resumeAt = video.currentTime > 0 ? video.currentTime : 0;
+      let url = currentStreamUrl;
+      try {
+        const fresh = await fetchFreshStreamUrl(
+          currentEpisodeId,
+          currentPlaybackTranslation || translationEl.value,
+        );
+        if (fresh) url = fresh;
+      } catch (_) { /* keep current url */ }
+      attachSource(url, { resumeAt, recovering: true });
+      try {
+        await video.play();
+      } catch (_) { /* ignore */ }
+    }
+
+    function createHlsInstance() {
+      return new Hls({
+        enableWorker: false,
+        lowLatencyMode: false,
+        backBufferLength: 30,
+        maxBufferLength: 50,
+        maxMaxBufferLength: 100,
+        maxBufferSize: 55 * 1000 * 1000,
+        capLevelToPlayerSize: true,
+        startLevel: -1,
+        fragLoadingMaxRetry: 8,
+        fragLoadingRetryDelay: 1000,
+        manifestLoadingMaxRetry: 5,
+        levelLoadingMaxRetry: 5,
+      });
+    }
+
+    function bindHlsErrorRecovery(instance) {
+      instance.on(Hls.Events.ERROR, (_, data) => {
+        const detail = JSON.stringify({
+          fatal: data.fatal,
+          type: data.type,
+          details: data.details,
+          url: data.url,
+          response: data.response && { code: data.response.code },
+        });
+        if (!data.fatal) return;
+        syncPlayerErrorContext();
+        const type = data.type;
+        if (type === Hls.ErrorTypes.NETWORK_ERROR) {
+          if (typeof window.reportPlayerError === 'function') {
+            window.reportPlayerError('hls-network', detail);
+          }
+          instance.startLoad();
+          return;
+        }
+        if (type === Hls.ErrorTypes.MEDIA_ERROR) {
+          if (typeof window.reportPlayerError === 'function') {
+            window.reportPlayerError('hls-media', detail);
+          }
+          instance.recoverMediaError();
+          return;
+        }
+        if (typeof window.reportPlayerError === 'function') {
+          window.reportPlayerError('hls-fatal', detail);
+        }
+        recoverPlaybackStream(`hls-${data.details || 'fatal'}`);
+      });
+    }
+
+    function shouldUseHlsJs() {
+      return Boolean(window.Hls && Hls.isSupported());
+    }
+
+    function startStreamRefreshTimer() {
+      stopStreamRefreshTimer();
+      streamRefreshTimer = setInterval(async () => {
+        if (!currentEpisodeId || video.paused || !currentStreamUrl) return;
+        try {
+          const fresh = await fetchFreshStreamUrl(
+            currentEpisodeId,
+            currentPlaybackTranslation || translationEl.value,
+          );
+          if (!fresh || fresh === currentStreamUrl) return;
+          const resumeAt = video.currentTime;
+          currentStreamUrl = fresh;
+          attachSource(fresh, { resumeAt, recovering: true });
+          await video.play().catch(() => {});
+        } catch (_) { /* ignore periodic refresh errors */ }
+      }, STREAM_REFRESH_MS);
+    }
+
+    function attachSource(url, opts = {}) {
+      const resumeAt = opts.resumeAt;
+      const recovering = !!opts.recovering;
+      if (hls) {
+        try { hls.destroy(); } catch (_) { /* ignore */ }
+        hls = null;
+      }
       video.removeAttribute('src');
       video.load();
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = url;
-        return;
-      }
-      if (window.Hls && Hls.isSupported()) {
-        hls = new Hls({ enableWorker: true });
+      currentStreamUrl = url;
+      if (!recovering) streamRecoverAttempts = 0;
+      ensureVideoRecoveryBound();
+
+      if (shouldUseHlsJs()) {
+        hls = createHlsInstance();
+        bindHlsErrorRecovery(hls);
         hls.loadSource(url);
         hls.attachMedia(video);
-        hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) setStatus('Ошибка HLS. Откройте серию снова.', true);
-        });
+        if (resumeAt != null) seekVideoWhenReady(resumeAt);
+        startStreamRefreshTimer();
         return;
       }
+
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+        if (resumeAt != null) seekVideoWhenReady(resumeAt);
+        startStreamRefreshTimer();
+        return;
+      }
+
       setStatus('Браузер не поддерживает HLS. Попробуйте другой браузер на ТВ.', true);
     }
 
@@ -611,9 +814,14 @@
       video.controls = !playerScreen.classList.contains('active');
     }
 
-    function setPlayerBarFocusTrap(on) {
-      playerScreen.querySelectorAll('.bar button').forEach((btn) => {
-        btn.tabIndex = on ? -1 : 0;
+    function playerBarButtons() {
+      return [...playerScreen.querySelectorAll('.bar button')];
+    }
+
+    function updatePlayerBarFocus() {
+      const trap = isVideoExpanded();
+      playerBarButtons().forEach((btn) => {
+        btn.tabIndex = trap ? -1 : 0;
       });
     }
 
@@ -622,9 +830,9 @@
       playerScreen.setAttribute('aria-hidden', show ? 'false' : 'true');
       document.body.style.overflow = show ? 'hidden' : '';
       updatePlayerVideoControls();
-      setPlayerBarFocusTrap(show);
       if (show) {
         pushPlayerHistory();
+        updatePlayerBarFocus();
         requestAnimationFrame(() => playerStage.focus());
       }
     }
@@ -712,8 +920,13 @@
       const now = Date.now();
       if (now - lastPlayPauseToggleMs < 350) return;
       lastPlayPauseToggleMs = now;
-      if (video.paused) video.play().catch(() => {});
-      else video.pause();
+      if (video.paused) {
+        video.play().then(() => {
+          if (playerScreen.classList.contains('active')) expandVideoInPlayer();
+        }).catch(() => {});
+      } else {
+        video.pause();
+      }
       updatePlayPauseButton();
       flashPlaybackHint();
     }
@@ -727,6 +940,30 @@
       const expanded = isVideoExpanded();
       playerScreen.classList.toggle('video-expanded', expanded);
       updatePlayerVideoControls();
+      updatePlayerBarFocus();
+    }
+
+    function pauseAndShowBar() {
+      collapseVideoInPlayer();
+      if (!video.paused) video.pause();
+      updatePlayPauseButton();
+      flashPlaybackHint();
+      updatePlayerBarFocus();
+      requestAnimationFrame(() => btnPlayPause.focus());
+    }
+
+    function isFocusOnPlayerBar() {
+      const bar = playerScreen.querySelector('.bar');
+      return Boolean(bar && bar.contains(document.activeElement));
+    }
+
+    function moveBarFocus(delta) {
+      const buttons = playerBarButtons();
+      if (!buttons.length) return;
+      let idx = buttons.indexOf(document.activeElement);
+      if (idx < 0) idx = 0;
+      else idx = Math.max(0, Math.min(buttons.length - 1, idx + delta));
+      buttons[idx].focus();
     }
 
     function expandVideoInPlayer() {
@@ -787,6 +1024,9 @@
         };
       } catch (err) {
         setStatus(err.message || 'Не удалось получить поток', true);
+        if (typeof window.reportPlayerError === 'function') {
+          window.reportPlayerError('play-start', err.message || String(err), { episodeId });
+        }
         showPlayer(false);
         if (playerHistoryPushed) {
           playerHistoryPushed = false;
@@ -796,6 +1036,9 @@
       }
 
       currentEpisodeId = episodeId;
+      currentPlaybackTranslation = translation;
+      streamRecoverAttempts = 0;
+      syncPlayerErrorContext();
       nowPlaying.textContent = `Серия ${ep.num}: ${ep.title} — ${translationLabel(stream.translation || translation)}`;
       attachSource(stream.file);
       setStatus('');
@@ -870,6 +1113,10 @@
     function onPlayerSurfaceActivate(e) {
       if (!playerScreen.classList.contains('active')) return;
       if (e && e.preventDefault) e.preventDefault();
+      if (isVideoExpanded()) {
+        pauseAndShowBar();
+        return;
+      }
       togglePlayPause();
     }
 
@@ -887,7 +1134,7 @@
     video.addEventListener('webkitendfullscreen', () => {
       syncVideoExpandedUi();
       if (playerScreen.classList.contains('active') && !isVideoExpanded()) {
-        playerStage.focus();
+        btnPlayPause.focus();
       }
     });
 
@@ -914,29 +1161,59 @@
         return;
       }
 
+      if (isFocusOnPlayerBar()) {
+        if (e.key === 'ArrowLeft' || e.key === 'Left') {
+          e.preventDefault();
+          moveBarFocus(-1);
+          return;
+        }
+        if (e.key === 'ArrowRight' || e.key === 'Right') {
+          e.preventDefault();
+          moveBarFocus(1);
+          return;
+        }
+        if (isOkKey(e)) return;
+      }
+
       if (isOkKey(e)) {
+        if (document.activeElement !== playerStage && document.activeElement !== video) return;
         e.preventDefault();
         e.stopPropagation();
-        togglePlayPause();
-        playerStage.focus();
+        if (isVideoExpanded()) pauseAndShowBar();
+        else togglePlayPause();
         return;
       }
 
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        stepEpisode(-1);
+      if (isVideoExpanded()) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'Down') {
+        if (document.activeElement === playerStage || document.activeElement === video) {
+          e.preventDefault();
+          btnPlayPause.focus();
+        }
         return;
       }
 
-      if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        stepEpisode(1);
+      if (e.key === 'ArrowLeft' || e.key === 'Left') {
+        if (document.activeElement === playerStage || document.activeElement === video) {
+          e.preventDefault();
+          stepEpisode(-1);
+        }
+        return;
+      }
+
+      if (e.key === 'ArrowRight' || e.key === 'Right') {
+        if (document.activeElement === playerStage || document.activeElement === video) {
+          e.preventDefault();
+          stepEpisode(1);
+        }
         return;
       }
 
       if (isMediaPlayPauseKey(e)) {
         e.preventDefault();
-        togglePlayPause();
+        if (isVideoExpanded()) pauseAndShowBar();
+        else togglePlayPause();
       }
     }, true);
 
