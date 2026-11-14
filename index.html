@@ -597,6 +597,7 @@
 
     function destroyHls() {
       stopStreamRefreshTimer();
+      clearWaitingDownshiftTimer();
       if (hls) {
         try { hls.destroy(); } catch (_) { /* ignore */ }
         hls = null;
@@ -667,6 +668,17 @@
           video.play().catch(() => {});
         }
       });
+      video.addEventListener('waiting', () => {
+        if (!hls || video.paused || !currentEpisodeId) return;
+        clearWaitingDownshiftTimer();
+        waitingDownshiftTimer = setTimeout(() => {
+          waitingDownshiftTimer = null;
+          if (!hls || video.paused) return;
+          downshiftHlsLevel('video-waiting');
+        }, WAITING_DOWNSHIFT_MS);
+      });
+      video.addEventListener('playing', clearWaitingDownshiftTimer);
+      video.addEventListener('canplay', clearWaitingDownshiftTimer);
     }
 
     let videoRecoveryBound = false;
@@ -705,16 +717,39 @@
       } catch (_) { /* ignore */ }
     }
 
+    let waitingDownshiftTimer = null;
+    const WAITING_DOWNSHIFT_MS = 2500;
+    let lastLevelDownshiftMs = 0;
+    const LEVEL_DOWNSHIFT_COOLDOWN_MS = 4000;
+
+    function downshiftHlsLevel(reason) {
+      if (!hls) return false;
+      const now = Date.now();
+      if (now - lastLevelDownshiftMs < LEVEL_DOWNSHIFT_COOLDOWN_MS) return false;
+      const level = hls.currentLevel >= 0 ? hls.currentLevel : hls.loadLevel;
+      if (!Number.isFinite(level) || level <= 0) return false;
+      lastLevelDownshiftMs = now;
+      hls.nextLevel = level - 1;
+      try {
+        hls.startLoad();
+      } catch (_) { /* ignore */ }
+      return true;
+    }
+
     function createHlsInstance() {
       return new Hls({
         enableWorker: false,
         lowLatencyMode: false,
         backBufferLength: 30,
-        maxBufferLength: 50,
-        maxMaxBufferLength: 100,
-        maxBufferSize: 55 * 1000 * 1000,
+        maxBufferLength: 90,
+        maxMaxBufferLength: 180,
+        maxBufferSize: 80 * 1000 * 1000,
         capLevelToPlayerSize: true,
-        startLevel: -1,
+        startLevel: 0,
+        testBandwidth: false,
+        abrEwmaDefaultEstimate: 400000,
+        abrBandWidthFactor: 0.7,
+        abrBandWidthUpFactor: 0.5,
         fragLoadingMaxRetry: 8,
         fragLoadingRetryDelay: 1000,
         manifestLoadingMaxRetry: 5,
@@ -722,7 +757,24 @@
       });
     }
 
+    function clearWaitingDownshiftTimer() {
+      if (waitingDownshiftTimer) {
+        clearTimeout(waitingDownshiftTimer);
+        waitingDownshiftTimer = null;
+      }
+    }
+
+    function bindHlsStallDownshift(instance) {
+      instance.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) return;
+        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+          downshiftHlsLevel('buffer-stalled');
+        }
+      });
+    }
+
     function bindHlsErrorRecovery(instance) {
+      bindHlsStallDownshift(instance);
       instance.on(Hls.Events.ERROR, (_, data) => {
         const detail = JSON.stringify({
           fatal: data.fatal,
@@ -1190,22 +1242,6 @@
         if (document.activeElement === playerStage || document.activeElement === video) {
           e.preventDefault();
           btnPlayPause.focus();
-        }
-        return;
-      }
-
-      if (e.key === 'ArrowLeft' || e.key === 'Left') {
-        if (document.activeElement === playerStage || document.activeElement === video) {
-          e.preventDefault();
-          stepEpisode(-1);
-        }
-        return;
-      }
-
-      if (e.key === 'ArrowRight' || e.key === 'Right') {
-        if (document.activeElement === playerStage || document.activeElement === video) {
-          e.preventDefault();
-          stepEpisode(1);
         }
         return;
       }
