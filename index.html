@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Доктор Кто — сезон 12</title>
+  <title>Доктор Кто — сезон 13</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
   <style>
     :root {
@@ -259,7 +259,7 @@
   <header>
     <div class="header-row">
       <div class="header-titles">
-        <h1>Доктор Кто — 12 сезон</h1>
+        <h1>Доктор Кто — 13 сезон</h1>
         <p class="sub">↑↓ — серия, OK — старт. В плеере: OK на видео — пауза и панель, «Назад» — к списку.</p>
       </div>
       <div class="header-trans">
@@ -294,24 +294,23 @@
 
   <script src="player-report-config.js"></script>
   <script src="player-error-report.js"></script>
-  <script src="season12-playback.js"></script>
+  <script src="season-playback.js"></script>
   <script>
     const EPISODE_NAMES = {
-      s12e01: 'Spyfall, Part 1',
-      s12e02: 'Spyfall, Part 2',
-      s12e03: 'Orphan 55',
-      s12e04: "Nikola Tesla's Night of Terror",
-      s12e05: 'Fugitive of the Judoon',
-      s12e06: 'Praxeus',
-      s12e07: 'Can You Hear Me?',
-      s12e08: 'The Haunting of Villa Diodati',
-      s12e09: 'Ascension of the Cybermen',
-      s12e10: 'The Timeless Children',
+      s13e01: 'The Halloween Apocalypse',
+      s13e02: 'War of the Sontarans',
+      s13e03: 'Once, Upon Time',
+      s13e04: 'Village of the Angels',
+      s13e05: 'Survivors of the Flux',
+      s13e06: 'The Vanquishers',
+      s13e07: 'Eve of the Daleks',
+      s13e08: 'Legend of the Sea Devils',
+      s13e09: 'The Power of the Doctor',
     };
 
-    const STORAGE_KEY = 'dw_s12_translation_jaskier';
-    const EPISODE_KEY = 'dw_s12_episode';
-    const POSITION_KEY = 'dw_s12_positions';
+    const STORAGE_KEY = 'dw_s13_translation';
+    const EPISODE_KEY = 'dw_s13_episode';
+    const POSITION_KEY = 'dw_s13_positions';
     const POSITION_SAVE_INTERVAL_MS = 20_000;
 
     let catalog = { episodes: new Map(), translations: [] };
@@ -577,7 +576,10 @@
       }
       if (saved && translations.includes(saved)) translationEl.value = saved;
       else {
-        const preferred = translations.find((t) => /Jaskier/i.test(t));
+        const preferred =
+          translations.find((t) => /Jaskier/i.test(t))
+          || translations.find((t) => /TVShows/i.test(t))
+          || translations.find((t) => /BaibaKo/i.test(t));
         if (preferred) translationEl.value = preferred;
       }
       renderEpisodeList();
@@ -608,7 +610,8 @@
       const res = await fetch('cinemar-playlist.json', { cache: 'no-store' });
       if (!res.ok) throw new Error(`playlist HTTP ${res.status}`);
       const playlist = await res.json();
-      const track = window.Season12Playback.findEpisodeTrack(playlist, episodeId, translation);
+      const pb = window.SeasonPlayback || window.Season12Playback;
+      const track = pb.findEpisodeTrack(playlist, episodeId, translation);
       return track.streamUrl || null;
     }
 
@@ -1065,7 +1068,7 @@
       setStatus('Получаем ссылку на поток…');
       let stream;
       try {
-        const pb = window.Season12Playback;
+        const pb = window.SeasonPlayback || window.Season12Playback;
         const [playlist, embedUrl] = await Promise.all([pb.loadPlaylist(), pb.loadEmbedUrl()]);
         const referer = pb.cinemarReferer(embedUrl);
         const track = pb.findEpisodeTrack(playlist, episodeId, translation);
@@ -1255,16 +1258,16 @@
 
     async function init() {
       try {
-        const res = await fetch('season-12-catalog.json', { cache: 'no-store' });
+        const res = await fetch('season-13-catalog.json', { cache: 'no-store' });
         const data = await res.json();
-        if (!res.ok) throw new Error(`season-12-catalog.json HTTP ${res.status}`);
+        if (!res.ok) throw new Error(`season-13-catalog.json HTTP ${res.status}`);
         catalog = buildCatalogFromApi(data);
-        if (episodeOrder.length === 0) throw new Error('Нет серий 1–10 в каталоге');
+        if (episodeOrder.length === 0) throw new Error('Нет серий в каталоге сезона 13');
         renderTranslations(catalog.translations);
         focusSelectedEpisode();
       } catch (err) {
         setStatus(
-          'Не удалось загрузить каталог (season-12-catalog.json). На машине сборки: docker/embed-refresh, затем git push dist/.',
+          'Не удалось загрузить каталог (season-13-catalog.json). На машине сборки: docker/embed-refresh, затем git push dist/.',
           true,
         );
         console.error(err);

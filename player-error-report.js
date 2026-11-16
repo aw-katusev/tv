@@ -54,7 +54,7 @@
     const payload = {
       embeds: [
         {
-          title: 'Doctor Who S12 — ошибка плеера',
+          title: 'Doctor Who — ошибка плеера',
           color: 0xe74c3c,
           fields,
           timestamp: new Date().toISOString(),
