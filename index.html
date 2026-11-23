@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Доктор Кто — сезон 13</title>
+  <title>Доктор Кто — сезон 14</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
   <style>
     :root {
@@ -259,7 +259,7 @@
   <header>
     <div class="header-row">
       <div class="header-titles">
-        <h1>Доктор Кто — 13 сезон</h1>
+        <h1>Доктор Кто — 14 сезон</h1>
         <p class="sub">↑↓ — серия, OK — старт. В плеере: OK на видео — пауза и панель, «Назад» — к списку.</p>
       </div>
       <div class="header-trans">
@@ -297,20 +297,19 @@
   <script src="season-playback.js"></script>
   <script>
     const EPISODE_NAMES = {
-      s13e01: 'The Halloween Apocalypse',
-      s13e02: 'War of the Sontarans',
-      s13e03: 'Once, Upon Time',
-      s13e04: 'Village of the Angels',
-      s13e05: 'Survivors of the Flux',
-      s13e06: 'The Vanquishers',
-      s13e07: 'Eve of the Daleks',
-      s13e08: 'Legend of the Sea Devils',
-      s13e09: 'The Power of the Doctor',
+      s14e01: 'Space Babies',
+      s14e02: "The Devil's Chord",
+      s14e03: 'Boom',
+      s14e04: '73 Yards',
+      s14e05: 'Dot and Bubble',
+      s14e06: 'Rogue',
+      s14e07: 'The Legend of Ruby Sunday',
+      s14e08: 'Empire of Death',
     };
 
-    const STORAGE_KEY = 'dw_s13_translation';
-    const EPISODE_KEY = 'dw_s13_episode';
-    const POSITION_KEY = 'dw_s13_positions';
+    const STORAGE_KEY = 'dw_s14_translation';
+    const EPISODE_KEY = 'dw_s14_episode';
+    const POSITION_KEY = 'dw_s14_positions';
     const POSITION_SAVE_INTERVAL_MS = 20_000;
 
     let catalog = { episodes: new Map(), translations: [] };
@@ -577,7 +576,8 @@
       if (saved && translations.includes(saved)) translationEl.value = saved;
       else {
         const preferred =
-          translations.find((t) => /Jaskier/i.test(t))
+          translations.find((t) => /RuDub/i.test(t))
+          || translations.find((t) => /Jaskier/i.test(t))
           || translations.find((t) => /TVShows/i.test(t))
           || translations.find((t) => /BaibaKo/i.test(t));
         if (preferred) translationEl.value = preferred;
@@ -1258,16 +1258,16 @@
 
     async function init() {
       try {
-        const res = await fetch('season-13-catalog.json', { cache: 'no-store' });
+        const res = await fetch('season-14-catalog.json', { cache: 'no-store' });
         const data = await res.json();
-        if (!res.ok) throw new Error(`season-13-catalog.json HTTP ${res.status}`);
+        if (!res.ok) throw new Error(`season-14-catalog.json HTTP ${res.status}`);
         catalog = buildCatalogFromApi(data);
-        if (episodeOrder.length === 0) throw new Error('Нет серий в каталоге сезона 13');
+        if (episodeOrder.length === 0) throw new Error('Нет серий в каталоге сезона 14');
         renderTranslations(catalog.translations);
         focusSelectedEpisode();
       } catch (err) {
         setStatus(
-          'Не удалось загрузить каталог (season-13-catalog.json). На машине сборки: docker/embed-refresh, затем git push dist/.',
+          'Не удалось загрузить каталог (season-14-catalog.json). На машине сборки: docker/embed-refresh, затем git push dist/.',
           true,
         );
         console.error(err);

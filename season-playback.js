@@ -3,7 +3,7 @@
  * Season id must match docker TV_SEASON / catalog.
  */
 (function () {
-  const SEASON_ID = 's13';
+  const SEASON_ID = 's14';
 
   function labelKey(raw) {
     return String(raw || '').split('(')[0].trim().toLowerCase();
