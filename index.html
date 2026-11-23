@@ -196,18 +196,6 @@
       background: #000;
       object-fit: contain;
     }
-    /* Hide Chromium/WebKit native media UI (also appears if <video> itself is fullscreen). */
-    #player-screen video::-webkit-media-controls,
-    #player-screen video::-webkit-media-controls-enclosure,
-    #player-screen video::-webkit-media-controls-panel,
-    #player-screen video::-webkit-media-controls-overlay-play-button {
-      display: none !important;
-      -webkit-appearance: none;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
     #player-screen .cinemar-frame {
       display: none;
       flex: 1;
@@ -343,13 +331,7 @@
 
   <div id="player-screen" aria-hidden="true">
     <div class="player-stage" id="player-stage" tabindex="0" aria-label="Видео, OK — пауза, Назад — к списку">
-      <video
-        id="video"
-        playsinline
-        tabindex="-1"
-        controlslist="nodownload nofullscreen noremoteplayback"
-        disablepictureinpicture
-      ></video>
+      <video id="video" playsinline tabindex="-1"></video>
       <iframe
         id="cinemar-frame"
         class="cinemar-frame"
@@ -960,11 +942,8 @@
 
     function updatePlayerVideoControls() {
       // Native video controls stay off; TV uses the custom bar.
-      // Fullscreening <video> itself brings Chromium controls back — never do that.
       video.controls = false;
       video.removeAttribute('controls');
-      video.setAttribute('controlslist', 'nodownload nofullscreen noremoteplayback');
-      video.disablePictureInPicture = true;
     }
 
     function updatePlaybackProgressLabel() {
@@ -1157,36 +1136,13 @@
       flashPlaybackHint();
     }
 
-    function getFullscreenElement() {
-      return document.fullscreenElement || document.webkitFullscreenElement || null;
-    }
-
-    function isPlayerContainerFullscreen() {
-      const fs = getFullscreenElement();
-      return fs === playerScreen || fs === playerStage;
-    }
-
     function isVideoExpanded() {
-      // Prefer container fullscreen / CSS class — never treat <video> FS as desired state.
-      if (playerScreen.classList.contains('video-expanded')) return true;
-      if (isPlayerContainerFullscreen()) return true;
-      return false;
+      const fs = document.fullscreenElement || document.webkitFullscreenElement;
+      return fs === video || video.webkitDisplayingFullscreen === true;
     }
 
     function syncVideoExpandedUi() {
-      const fs = getFullscreenElement();
-      // If browser somehow fullscreened <video>, exit and use container instead.
-      if (fs === video) {
-        const exit = document.exitFullscreen || document.webkitExitFullscreen;
-        if (exit) {
-          Promise.resolve(exit.call(document)).finally(() => {
-            playerScreen.classList.add('video-expanded');
-            expandVideoInPlayer();
-          });
-          return;
-        }
-      }
-      const expanded = playerScreen.classList.contains('video-expanded') || isPlayerContainerFullscreen();
+      const expanded = isVideoExpanded();
       playerScreen.classList.toggle('video-expanded', expanded);
       updatePlayerVideoControls();
       updatePlayerBarFocus();
@@ -1216,29 +1172,25 @@
     }
 
     function expandVideoInPlayer() {
-      updatePlayerVideoControls();
-      playerScreen.classList.add('video-expanded');
-      updatePlayerBarFocus();
-      if (isPlayerContainerFullscreen()) {
-        syncVideoExpandedUi();
+      if (isVideoExpanded()) return;
+      if (video.requestFullscreen) {
+        video.requestFullscreen().then(syncVideoExpandedUi).catch(syncVideoExpandedUi);
         return;
       }
-      // Fullscreen the shell, not <video> — otherwise Chromium shows native controls.
-      const target = playerScreen;
-      const req = target.requestFullscreen || target.webkitRequestFullscreen;
-      if (req) {
-        Promise.resolve(req.call(target)).then(syncVideoExpandedUi).catch(syncVideoExpandedUi);
-        return;
+      if (video.webkitEnterFullscreen) {
+        try {
+          video.webkitEnterFullscreen();
+        } catch (_) { /* overlay is enough on Android TV */ }
       }
       syncVideoExpandedUi();
     }
 
     function collapseVideoInPlayer() {
-      playerScreen.classList.remove('video-expanded');
-      const fs = getFullscreenElement();
-      const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      if (exit && (fs === playerScreen || fs === playerStage || fs === video)) {
-        Promise.resolve(exit.call(document)).catch(() => {});
+      if (!isVideoExpanded()) return;
+      const doc = document;
+      const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+      if (doc.fullscreenElement === video && exit) {
+        Promise.resolve(exit.call(doc)).catch(() => {});
       }
       if (video.webkitDisplayingFullscreen && video.webkitExitFullscreen) {
         try { video.webkitExitFullscreen(); } catch (_) { /* ignore */ }
