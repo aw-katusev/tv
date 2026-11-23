@@ -110,23 +110,21 @@
       overflow-y: auto;
       padding-right: 0.15rem;
     }
-    .ep-item {
+    .episode-list button {
+      font: inherit;
+      width: 100%;
+      text-align: left;
+      padding: 0.75rem 1rem;
       border-radius: 10px;
       border: 2px solid #3a4250;
       background: #0f1218;
-      padding: 0.65rem 0.75rem;
+      color: var(--text);
+      min-height: 3rem;
+      cursor: pointer;
       display: flex;
       flex-direction: column;
-      gap: 0.55rem;
-    }
-    .ep-item.selected {
-      border-color: var(--accent);
-      background: #1a2433;
-    }
-    .ep-meta {
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
+      align-items: stretch;
+      gap: 0.45rem;
     }
     .ep-main {
       display: flex;
@@ -158,30 +156,15 @@
       background: var(--accent);
     }
     .ep-progress-fill.done { background: #4ade80; }
-    .ep-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.45rem;
-    }
-    .ep-actions button {
-      font: inherit;
-      font-size: 0.8em;
-      flex: 1;
-      min-width: 7rem;
-      text-align: center;
-      padding: 0.55rem 0.75rem;
-      border-radius: 8px;
-      border: 2px solid #3a4250;
-      background: #161a22;
-      color: var(--text);
-      min-height: 2.75rem;
-      cursor: pointer;
-    }
-    .ep-actions button:disabled {
+    .episode-list button:disabled {
       opacity: 0.4;
       cursor: not-allowed;
     }
-    .ep-actions button:focus {
+    .episode-list button.selected {
+      border-color: var(--accent);
+      background: #1a2433;
+    }
+    .episode-list button:focus {
       outline: 3px solid var(--focus);
       border-color: var(--accent);
     }
@@ -305,6 +288,22 @@
       white-space: nowrap;
     }
     #player-screen .bar .progress-time:empty { display: none; }
+    #player-screen .bar .mode-badge {
+      display: none;
+      flex-shrink: 0;
+      font-size: 0.65em;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      padding: 0.25rem 0.55rem;
+      border-radius: 6px;
+      border: 1px solid #5a6a3a;
+      background: #2a3318;
+      color: #c8e06a;
+      white-space: nowrap;
+    }
+    #player-screen.mode-cinemar .bar .mode-badge {
+      display: inline-block;
+    }
   </style>
 </head>
 <body>
@@ -312,7 +311,7 @@
     <div class="header-row">
       <div class="header-titles">
         <h1>Доктор Кто — 14 сезон</h1>
-        <p class="sub">↑↓ — серия, ←→ — Плеер/Cinemar. В fullscreen: ↑/↓/Назад — пауза; ←→ — ±10с; Назад с панели — к списку.</p>
+        <p class="sub">↑↓ — серия, OK — старт. В fullscreen: ↑/↓/Назад — пауза; ←→ — ±10с. Если поток не открылся — Cinemar.</p>
       </div>
       <div class="header-trans">
         <label for="translation">Озвучка</label>
@@ -348,6 +347,7 @@
       <button type="button" id="btn-playpause">⏸ Пауза</button>
       <button type="button" id="btn-prev">◀ −10с</button>
       <button type="button" id="btn-next">+10с ▶</button>
+      <span class="mode-badge" id="mode-badge" aria-live="polite">iframe Cinemar</span>
       <span class="title-wrap">
         <span class="title" id="now-playing"></span>
         <span class="progress-time" id="playback-progress" aria-live="off"></span>
@@ -397,7 +397,6 @@
     const btnPrev = document.getElementById('btn-prev');
     const btnNext = document.getElementById('btn-next');
     let playerMode = 'hls'; // 'hls' | 'cinemar'
-    let lastPlayMode = 'hls';
     const SEEK_STEP_SEC = 10;
 
     function setStatus(msg, isError) {
@@ -473,11 +472,11 @@
       localStorage.setItem(POSITION_KEY, JSON.stringify(pos));
     }
 
-    function syncEpisodeProgress(row, episodeId) {
+    function syncEpisodeProgress(btn, episodeId) {
       const p = getEpisodePosition(episodeId);
-      const label = row.querySelector('.ep-progress-label');
-      const fill = row.querySelector('.ep-progress-fill');
-      const track = row.querySelector('.ep-progress-track');
+      const label = btn.querySelector('.ep-progress-label');
+      const fill = btn.querySelector('.ep-progress-fill');
+      const track = btn.querySelector('.ep-progress-track');
       if (!label || !fill || !track) return;
       const text = progressLabel(p);
       label.textContent = text;
@@ -495,8 +494,8 @@
     }
 
     function refreshEpisodeProgressMarks() {
-      episodeListEl.querySelectorAll('.ep-item[data-episode-id]').forEach((row) => {
-        syncEpisodeProgress(row, row.dataset.episodeId);
+      episodeListEl.querySelectorAll('button[data-episode-id]').forEach((btn) => {
+        syncEpisodeProgress(btn, btn.dataset.episodeId);
       });
     }
 
@@ -505,8 +504,8 @@
       const d = Number.isFinite(video.duration) ? video.duration : 0;
       savePosition(currentEpisodeId, video.currentTime, d);
       lastPositionSaveMs = Date.now();
-      const row = episodeListEl.querySelector(`.ep-item[data-episode-id="${currentEpisodeId}"]`);
-      if (row) syncEpisodeProgress(row, currentEpisodeId);
+      const listBtn = episodeListEl.querySelector(`button[data-episode-id="${currentEpisodeId}"]`);
+      if (listBtn) syncEpisodeProgress(listBtn, currentEpisodeId);
     }
 
     function maybeSavePlaybackPosition() {
@@ -527,35 +526,24 @@
     }
 
     function episodeButtons() {
-      return [...episodeListEl.querySelectorAll('button[data-episode-id][data-play-mode]')];
+      return [...episodeListEl.querySelectorAll('button[data-episode-id]')];
     }
 
     function playableEpisodeButtons() {
       return episodeButtons().filter((b) => !b.disabled);
     }
 
-    function episodeActionButton(episodeId, mode) {
-      return episodeListEl.querySelector(
-        `button[data-episode-id="${episodeId}"][data-play-mode="${mode}"]`,
-      );
-    }
-
     function updateEpisodeListSelection() {
-      episodeListEl.querySelectorAll('.ep-item[data-episode-id]').forEach((row) => {
-        const isSel = row.dataset.episodeId === selectedEpisodeId;
-        row.classList.toggle('selected', isSel);
-        row.setAttribute('aria-selected', isSel ? 'true' : 'false');
-      });
       episodeButtons().forEach((btn) => {
-        const sameEp = btn.dataset.episodeId === selectedEpisodeId;
-        const sameMode = btn.dataset.playMode === lastPlayMode;
-        btn.tabIndex = sameEp && sameMode ? 0 : -1;
+        const isSel = btn.dataset.episodeId === selectedEpisodeId;
+        btn.classList.toggle('selected', isSel);
+        btn.setAttribute('aria-selected', isSel ? 'true' : 'false');
+        btn.tabIndex = isSel ? 0 : -1;
       });
     }
 
     function focusEpisodeButton(btn, { select = true } = {}) {
       if (!btn || btn.disabled) return;
-      lastPlayMode = btn.dataset.playMode || 'hls';
       if (select) setSelectedEpisode(btn.dataset.episodeId);
       else updateEpisodeListSelection();
       btn.tabIndex = 0;
@@ -563,36 +551,19 @@
         if (b !== btn) b.tabIndex = -1;
       });
       btn.focus({ preventScroll: false });
-      btn.closest('.ep-item')?.scrollIntoView({ block: 'nearest' });
+      btn.scrollIntoView({ block: 'nearest' });
     }
 
     function moveEpisodeFocus(delta) {
-      const mode = document.activeElement?.dataset?.playMode || lastPlayMode || 'hls';
-      const playableIds = episodeOrder.filter((id) => episodeHasTranslation(id));
-      if (playableIds.length === 0) return;
-      const activeId = document.activeElement?.dataset?.episodeId || selectedEpisodeId;
-      let idx = playableIds.indexOf(activeId);
-      if (idx < 0) idx = 0;
-      const nextId = playableIds[idx + delta];
-      if (!nextId) return;
-      const nextBtn =
-        episodeActionButton(nextId, mode)
-        || episodeActionButton(nextId, 'hls')
-        || episodeActionButton(nextId, 'cinemar');
-      if (nextBtn) focusEpisodeButton(nextBtn);
-    }
-
-    function movePlayModeFocus(delta) {
-      const id = document.activeElement?.dataset?.episodeId || selectedEpisodeId;
-      if (!id) return;
-      const modes = ['hls', 'cinemar'];
-      const cur = document.activeElement?.dataset?.playMode || lastPlayMode || 'hls';
-      let idx = modes.indexOf(cur);
-      if (idx < 0) idx = 0;
-      const nextMode = modes[idx + delta];
-      if (!nextMode) return;
-      const btn = episodeActionButton(id, nextMode);
-      if (btn && !btn.disabled) focusEpisodeButton(btn);
+      const playable = playableEpisodeButtons();
+      if (playable.length === 0) return;
+      const active = document.activeElement;
+      let idx = playable.indexOf(active);
+      if (idx < 0) {
+        idx = playable.findIndex((b) => b.dataset.episodeId === selectedEpisodeId);
+      }
+      const next = playable[idx + delta];
+      if (next) focusEpisodeButton(next);
     }
 
     function isVerticalNavKey(key) {
@@ -607,11 +578,12 @@
     }
 
     function focusSelectedEpisode() {
-      const preferred =
-        episodeActionButton(selectedEpisodeId, lastPlayMode)
-        || episodeActionButton(selectedEpisodeId, 'hls')
-        || episodeListEl.querySelector('button[data-play-mode]:not(:disabled)');
-      if (preferred && !preferred.disabled) focusEpisodeButton(preferred);
+      const btn = episodeListEl.querySelector(`button[data-episode-id="${selectedEpisodeId}"]`);
+      if (btn && !btn.disabled) focusEpisodeButton(btn);
+      else {
+        const first = episodeListEl.querySelector('button:not(:disabled)');
+        if (first) focusEpisodeButton(first);
+      }
     }
 
     function renderEpisodeList() {
@@ -620,12 +592,10 @@
       for (const id of episodeOrder) {
         const ep = catalog.episodes.get(id);
         const li = document.createElement('li');
-        li.className = 'ep-item';
-        li.dataset.episodeId = id;
-        li.setAttribute('role', 'option');
-
-        const meta = document.createElement('div');
-        meta.className = 'ep-meta';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.episodeId = id;
+        btn.setAttribute('role', 'option');
         const main = document.createElement('span');
         main.className = 'ep-main';
         const title = document.createElement('span');
@@ -641,38 +611,14 @@
         const fill = document.createElement('span');
         fill.className = 'ep-progress-fill';
         track.appendChild(fill);
-        meta.appendChild(main);
-        meta.appendChild(track);
-
-        const actions = document.createElement('div');
-        actions.className = 'ep-actions';
-        const disabled = !episodeHasTranslation(id);
-
-        const btnHls = document.createElement('button');
-        btnHls.type = 'button';
-        btnHls.dataset.episodeId = id;
-        btnHls.dataset.playMode = 'hls';
-        btnHls.textContent = 'Плеер';
-        btnHls.disabled = disabled;
-        btnHls.addEventListener('click', () => {
-          if (!btnHls.disabled) playEpisode(id);
+        btn.appendChild(main);
+        btn.appendChild(track);
+        syncEpisodeProgress(btn, id);
+        btn.disabled = !episodeHasTranslation(id);
+        btn.addEventListener('click', () => {
+          if (!btn.disabled) playEpisode(id);
         });
-
-        const btnCinemar = document.createElement('button');
-        btnCinemar.type = 'button';
-        btnCinemar.dataset.episodeId = id;
-        btnCinemar.dataset.playMode = 'cinemar';
-        btnCinemar.textContent = 'Cinemar';
-        btnCinemar.disabled = disabled;
-        btnCinemar.addEventListener('click', () => {
-          if (!btnCinemar.disabled) playEpisodeCinemar(id);
-        });
-
-        actions.appendChild(btnHls);
-        actions.appendChild(btnCinemar);
-        li.appendChild(meta);
-        li.appendChild(actions);
-        syncEpisodeProgress(li, id);
+        li.appendChild(btn);
         episodeListEl.appendChild(li);
       }
       let pick = saved;
@@ -692,15 +638,19 @@
         opt.textContent = translationLabel(t);
         translationEl.appendChild(opt);
       }
-      if (saved && translations.includes(saved)) translationEl.value = saved;
-      else {
+      const rudub = translations.find((t) => /RuDub/i.test(t));
+      if (rudub) {
+        translationEl.value = rudub;
+      } else if (saved && translations.includes(saved)) {
+        translationEl.value = saved;
+      } else {
         const preferred =
-          translations.find((t) => /RuDub/i.test(t))
-          || translations.find((t) => /Jaskier/i.test(t))
+          translations.find((t) => /Jaskier/i.test(t))
           || translations.find((t) => /TVShows/i.test(t))
           || translations.find((t) => /BaibaKo/i.test(t));
         if (preferred) translationEl.value = preferred;
       }
+      localStorage.setItem(STORAGE_KEY, translationEl.value);
       renderEpisodeList();
     }
 
@@ -813,6 +763,12 @@
     async function recoverPlaybackStream(_reason) {
       if (!currentEpisodeId) return;
       if (streamRecoverAttempts >= MAX_STREAM_RECOVER) {
+        const epId = currentEpisodeId;
+        if (epId) {
+          setStatus('Поток прерван — открываем Cinemar…');
+          await playEpisodeCinemar(epId, { fromFallback: true });
+          return;
+        }
         showPlayerPlaybackError('Поток прерван. Запустите серию снова или дождитесь обновления ссылок.');
         return;
       }
@@ -1251,7 +1207,6 @@
         return;
       }
 
-      lastPlayMode = 'hls';
       if (currentEpisodeId && currentEpisodeId !== episodeId) {
         flushPlaybackPosition();
       }
@@ -1270,20 +1225,17 @@
         const referer = pb.cinemarReferer(embedUrl);
         const track = pb.findEpisodeTrack(playlist, episodeId, translation);
         const loaded = await pb.loadCinemarStream(track, referer);
+        if (!loaded?.file) throw new Error('Пустая ссылка на поток');
         stream = {
           file: loaded.file,
           translation: track.translation || track.title || translation,
         };
       } catch (err) {
-        setStatus(err.message || 'Не удалось получить поток', true);
         if (typeof window.reportPlayerError === 'function') {
           window.reportPlayerError('play-start', err.message || String(err), { episodeId });
         }
-        showPlayer(false);
-        if (playerHistoryPushed) {
-          playerHistoryPushed = false;
-          history.back();
-        }
+        setStatus('Поток недоступен — открываем Cinemar…');
+        await playEpisodeCinemar(episodeId, { fromFallback: true });
         return;
       }
 
@@ -1318,7 +1270,7 @@
       playerStage.focus();
     }
 
-    async function playEpisodeCinemar(episodeId) {
+    async function playEpisodeCinemar(episodeId, opts = {}) {
       const ep = catalog.episodes.get(episodeId);
       if (!ep) return;
       if (!episodeHasTranslation(episodeId)) {
@@ -1326,7 +1278,6 @@
         return;
       }
 
-      lastPlayMode = 'cinemar';
       flushPlaybackPosition();
       video.pause();
       destroyHls();
@@ -1334,7 +1285,7 @@
       setSelectedEpisode(episodeId);
       setPlayerMode('cinemar');
       showPlayer(true);
-      setStatus('Открываем Cinemar…');
+      setStatus(opts.fromFallback ? 'Поток недоступен — открываем Cinemar…' : 'Открываем Cinemar…');
 
       try {
         const pb = window.SeasonPlayback || window.Season12Playback;
@@ -1387,27 +1338,18 @@
         moveEpisodeFocus(1);
       } else if (e.key === 'ArrowUp' || e.key === 'Up') {
         e.preventDefault();
-        const activeId = document.activeElement?.dataset?.episodeId;
-        const playableIds = episodeOrder.filter((id) => episodeHasTranslation(id));
-        const idx = playableIds.indexOf(activeId);
-        if (idx <= 0) translationEl.focus();
+        const playable = playableEpisodeButtons();
+        const idx = playable.indexOf(document.activeElement);
+        if (idx === 0) translationEl.focus();
         else moveEpisodeFocus(-1);
-      } else if (e.key === 'ArrowLeft' || e.key === 'Left') {
-        e.preventDefault();
-        movePlayModeFocus(-1);
-      } else if (e.key === 'ArrowRight' || e.key === 'Right') {
-        e.preventDefault();
-        movePlayModeFocus(1);
       } else if (
         episodeListEl.contains(document.activeElement)
         && (isOkKey(e) || e.key === ' ')
       ) {
         const id = document.activeElement.dataset?.episodeId;
-        const mode = document.activeElement.dataset?.playMode || 'hls';
         if (id && !document.activeElement.disabled) {
           e.preventDefault();
-          if (mode === 'cinemar') playEpisodeCinemar(id);
-          else playEpisode(id);
+          playEpisode(id);
         }
       }
     });
