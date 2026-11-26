@@ -374,11 +374,16 @@
   <script src="player-error-report.js"></script>
   <script src="season-playback.js"></script>
   <script>
-    // Kinogo "14 сезон" = 60th anniversary specials (not Gatwa Series 14).
+    // Our season 14 = Kinogo season 1 (Gatwa 2024). Docker remaps s01 → s14.
     const EPISODE_NAMES = {
-      s14e01: 'The Star Beast',
-      s14e02: 'Wild Blue Yonder',
-      s14e03: 'The Giggle',
+      s14e01: 'Space Babies',
+      s14e02: "The Devil's Chord",
+      s14e03: 'Boom',
+      s14e04: '73 Yards',
+      s14e05: 'Dot and Bubble',
+      s14e06: 'Rogue',
+      s14e07: 'The Legend of Ruby Sunday',
+      s14e08: 'Empire of Death',
     };
 
     const STORAGE_KEY = 'dw_s14_translation';
@@ -1125,10 +1130,11 @@
     function buildCinemarEpisodeUrl(embedUrl, episodeId, epNum) {
       const base = String(embedUrl || '').trim().split('#')[0];
       if (!base) throw new Error('Пустой Cinemar embed URL');
-      const seasonNum = Number(catalog.season) || 14;
+      const seasonNum = Number(catalog.sourceSeason) || Number(catalog.season) || 1;
       const sep = base.includes('?') ? '&' : '?';
-      // Query + hash: Cinemar builds vary; playlist id in hash is the most stable hint.
-      return `${base}${sep}season=${seasonNum}&episode=${epNum}#${encodeURIComponent(episodeId)}`;
+      const sourceId = `s${String(seasonNum).padStart(2, '0')}e${String(epNum).padStart(2, '0')}`;
+      // Query uses Kinogo's season number; hash is that player's episode id.
+      return `${base}${sep}season=${seasonNum}&episode=${epNum}#${encodeURIComponent(sourceId)}`;
     }
 
     function handlePlayerBack(fromPopState = false) {
